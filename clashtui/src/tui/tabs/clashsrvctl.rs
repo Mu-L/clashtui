@@ -1,5 +1,6 @@
 use super::ClashSrvOp;
 use crate::msgpopup_methods;
+use crate::utils::ClashSrvOpArg;
 use crate::{
     tui::{
         symbols::CLASHSRVCTL,
@@ -8,9 +9,11 @@ use crate::{
         widgets::{List, MsgPopup},
         EventState, Visibility,
     },
-    utils::{SharedClashTuiState, SharedClashTuiUtil},
+    utils::{SharedClashTuiState, SharedClashTuiUtil, check_sudo_password_required},
 };
 use api::Mode;
+use nix::libc::Elf32_Section;
+use ui::utils;
 
 #[derive(Visibility)]
 pub struct ClashSrvCtlTab {
@@ -25,6 +28,7 @@ pub struct ClashSrvCtlTab {
     clashtui_state: SharedClashTuiState,
 
     op: Option<ClashSrvOp>,
+    encrypted_password: Option<String>,
 }
 
 impl ClashSrvCtlTab {
@@ -53,6 +57,7 @@ impl ClashSrvCtlTab {
             clashtui_state,
             msgpopup: Default::default(),
             op: None,
+            encrypted_password: None,
         }
     }
 }
@@ -98,11 +103,24 @@ impl super::TabEvent for ClashSrvCtlTab {
             // override `Enter`
             event_state = if &Keys::Select == key {
                 let op = ClashSrvOp::from(self.main_list.selected().unwrap().as_str());
-                if let ClashSrvOp::SwitchMode = op {
-                    self.mode_selector.show();
-                } else {
-                    self.op.replace(op);
-                    self.popup_txt_msg("Working...".to_string());
+                match op {
+                    ClashSrvOp::SwitchMode => self.mode_selector.show(),
+                    ClashSrvOp::StartClashService | ClashSrvOp::StopClashService | ClashSrvOp::SetPermission  => {
+                        if check_sudo_password_required() {
+                            // TODO: Impl password widget to get user password
+                            self.encrypted_password = Some(String::from("123"));
+                        }
+                        else {
+                            self.encrypted_password = None;
+                        }
+                        
+                        self.op.replace(op);
+                        self.popup_txt_msg("Working...".to_string());
+                    }
+                    _ => {
+                        self.op.replace(op);
+                        self.popup_txt_msg("Working...".to_string());
+                    }
                 }
                 EventState::WorkDone
             } else {
@@ -119,7 +137,19 @@ impl super::TabEvent for ClashSrvCtlTab {
             self.hide_msgpopup();
             match op {
                 ClashSrvOp::SwitchMode => unreachable!(),
-                _ => match self.clashtui_util.clash_srv_ctl(op.clone()) {
+                ClashSrvOp::StartClashService | ClashSrvOp::StopClashService | ClashSrvOp::SetPermission => {
+                    let encrypted_password = self.encrypted_password.take();
+                    match self.clashtui_util.clash_srv_ctl(op.clone(), ClashSrvOpArg::Password(encrypted_password)) {
+                        Ok(output) => {
+                        self.popup_list_msg(output.lines().map(|line| line.trim().to_string()));
+                        }
+                        Err(err) => {
+                            self.popup_txt_msg(err.to_string());
+                        }
+                    }
+                    
+                }
+                _ => match self.clashtui_util.clash_srv_ctl(op.clone(), ClashSrvOpArg::NoneArg) {
                     Ok(output) => {
                         self.popup_list_msg(output.lines().map(|line| line.trim().to_string()));
                     }

@@ -1,6 +1,6 @@
 use std::process::{Command, Output, Stdio};
 
-use std::io::Result;
+use std::io::{Result, Write};
 
 pub fn exec(pgm: &str, args: Vec<&str>) -> Result<String> {
     log::debug!("IPC: {} {:?}", pgm, args);
@@ -46,4 +46,45 @@ fn string_process_output(output: Output) -> Result<String> {
     );
 
     Ok(result_str)
+}
+
+pub fn check_sudo_password_required() -> bool {
+    let output = Command::new("sudo")
+        .arg("-n")
+        .arg("true")
+        .output();
+
+    match output {
+        Ok(output) => {
+            !output.status.success()
+        }
+        Err(e) => {
+            log::error!("`sudo -n true`: {e}");
+            false
+        }
+    }
+}
+
+pub fn exec_with_password(pgm: &str, args: Vec<&str>, passwd: &str) -> Result<String> {
+    let mut child = Command::new("sudo")
+        .arg("-S")
+        .arg("-p")
+        .arg("")
+        .arg("--")
+        .arg(pgm)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(passwd.as_bytes())?;
+        stdin.write_all(b"\n")?;
+        stdin.flush()?;
+    }
+
+    let output = child.wait_with_output()?;
+    
+    string_process_output(output)
 }

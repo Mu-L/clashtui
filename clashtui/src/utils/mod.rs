@@ -13,6 +13,8 @@ pub type SharedClashTuiState = std::rc::Rc<core::cell::RefCell<State>>;
 pub use config::{init_config, CfgError, check_essential_files};
 pub use flags::{BitFlags as Flags, Flag};
 pub use state::State;
-pub use tui::{ClashTuiUtil, ProfileType};
+pub use tui::{ClashTuiUtil, ClashSrvOpArg, ProfileType};
 pub use utils::*;
 pub use clashtui_data::ClashTuiData;
+
+pub use ipc::check_sudo_password_required;

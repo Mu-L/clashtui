@@ -1,30 +1,49 @@
-use super::ClashTuiUtil;
+use super::{ClashTuiUtil, ClashSrvOpArg};
 use crate::tui::tabs::ClashSrvOp;
 use crate::utils::{
-    ipc::{self, exec},
+    ipc::{self, exec, exec_with_password},
     utils as toolkit,
 };
 
 use std::io::Error;
 
 impl ClashTuiUtil {
-    pub fn clash_srv_ctl(&self, op: ClashSrvOp) -> Result<String, Error> {
+    pub fn clash_srv_ctl(&self, op: ClashSrvOp, op_arg: ClashSrvOpArg) -> Result<String, Error> {
         const RC_SERVCIE_BIN: &str = "/sbin/rc-service";
         if(self.check_file_exist(RC_SERVCIE_BIN).is_ok()){
             return self.clash_srv_ctl_rc_service(op);
         }
-        return self.clash_srv_ctl_systemctl(op);
+        return self.clash_srv_ctl_systemctl(op, op_arg);
     }
-    pub fn clash_srv_ctl_systemctl(&self, op: ClashSrvOp) -> Result<String, Error> {
+    pub fn clash_srv_ctl_systemctl(&self, op: ClashSrvOp, op_arg: ClashSrvOpArg) -> Result<String, Error> {
         match op {
             ClashSrvOp::StartClashService => {
+                let mut output1 = String::new();
                 let mut args = vec!["restart", self.tui_cfg.clash_srv_name.as_str()];
                 if self.tui_cfg.is_user {
                     args.push("--user")
                 }
-                let output1 = exec("systemctl", args)?; // Although the command execution is successful,
-                                                        // the operation may not necessarily be successful.
-                                                        // So we need to show the command's output to the user.
+                
+                if ! self.tui_cfg.is_user {
+                    let mut new_args = vec!["systemctl"];
+                    new_args.extend(args);
+                    if let ClashSrvOpArg::Password(encrypted_password) = op_arg {
+                        if let Some(encrypted_password_str) = encrypted_password {
+                            // decrypt password
+                            let decrypted_password_str  = encrypted_password_str;
+                            output1 = exec_with_password("sudo", new_args, decrypted_password_str.as_str())?;
+                        }
+                    }
+                    else {
+                        output1 = exec("sudo", new_args)?;
+                    }
+                }
+                else {
+                    output1 = exec("systemctl", args)?; // Although the command execution is successful,
+                                                            // the operation may not necessarily be successful.
+                                                            // So we need to show the command's output to the user.
+                }
+
                 args = vec!["status", self.tui_cfg.clash_srv_name.as_str()];
                 if self.tui_cfg.is_user {
                     args.push("--user")
@@ -34,11 +53,32 @@ impl ClashTuiUtil {
                 Ok(format!("# ## restart\n{output1}# ## status\n{output2}"))
             }
             ClashSrvOp::StopClashService => {
+                let mut output1= String::new();
                 let mut args = vec!["stop", self.tui_cfg.clash_srv_name.as_str()];
                 if self.tui_cfg.is_user {
                     args.push("--user")
                 }
-                let output1 = exec("systemctl", args)?;
+                
+                if ! self.tui_cfg.is_user {
+                    let mut new_args = vec!["systemctl"];
+                    new_args.extend(args);
+                    if let ClashSrvOpArg::Password(encrypted_password) = op_arg {
+                        if let Some(encrypted_password_str) = encrypted_password {
+                            // decrypt password
+                            let decrypted_password_str  = encrypted_password_str;
+                            output1 = exec_with_password("sudo", new_args, decrypted_password_str.as_str())?;
+                        }
+                    }
+                    else {
+                        output1 = exec("sudo", new_args)?;
+                    }
+                }
+                else {
+                    output1 = exec("systemctl", args)?; // Although the command execution is successful,
+                                                            // the operation may not necessarily be successful.
+                                                            // So we need to show the command's output to the user.
+                }
+
                 args = vec!["status", self.tui_cfg.clash_srv_name.as_str()];
                 if self.tui_cfg.is_user {
                     args.push("--user")
@@ -59,7 +99,7 @@ impl ClashTuiUtil {
                     let mut cmd = vec![pgm];
                     cmd.extend(args);
                     // `setcap` doesn't trigger the polkit agent.
-                    ipc::exec_with_sbin("pkexec", cmd)
+                    ipc::exec_with_sbin("pkexec", cmd)      // TODO: remove `pkexec`
                 }
             }
             ClashSrvOp::CloseConnections => {
@@ -128,7 +168,7 @@ impl ClashTuiUtil {
                     let mut cmd = vec![pgm];
                     cmd.extend(args);
                     // `setcap` doesn't trigger the polkit agent.
-                    ipc::exec_with_sbin("pkexec", cmd)
+                    ipc::exec_with_sbin("pkexec", cmd)      // TODO: remove pkexec
                 }
             }
             ClashSrvOp::CloseConnections => {

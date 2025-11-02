@@ -48,6 +48,12 @@ impl ProfileItem {
 const BASIC_FILE: &str = "basic_clash_config.yaml";
 const DATA_FILE: &str = "data.yaml";
 
+#[derive(Debug, Clone)]
+pub enum ClashSrvOpArg {
+    Password(Option<String>),
+    NoneArg,
+}
+
 pub struct ClashTuiUtil {
     pub clashtui_dir: PathBuf,
     profile_dir: PathBuf,
